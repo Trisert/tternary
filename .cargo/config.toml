@@ -1,0 +1,5 @@
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "linker=cc", "-C", "link-args=-L/usr/lib/x86_64-linux-gnu/openblas-pthread -lopenblas"]
+
+[env]
+OPENBLAS_NUM_THREADS = "1"

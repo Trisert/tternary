@@ -1,0 +1,3 @@
+/target
+*.bin
+data/tinystories_encoded.bin

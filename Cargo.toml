@@ -1,0 +1,18 @@
+[package]
+name = "tternary"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ndarray = { version = "0.15", features = ["blas"] }
+blas-src = { version = "0.8", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "system"] }
+rand = "0.8"
+reqwest = { version = "0.11", features = ["blocking"] }
+hf-hub = { version = "0.5", features = ["tokio"] }
+tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
+ahash = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = true
