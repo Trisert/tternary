@@ -221,8 +221,8 @@ fn main() {
     println!();
 
     let mut model = model;
-    let warmup_epochs = 2;
-    let min_lr = lr * 0.01;
+    let warmup_epochs = 1;
+    let min_lr = lr * 0.1;
     let total_start = std::time::Instant::now();
 
     for epoch in 0..num_epochs {
@@ -231,6 +231,8 @@ fn main() {
 
         let current_lr = if epoch < warmup_epochs {
             min_lr + (lr - min_lr) * (epoch + 1) as f64 / warmup_epochs as f64
+        } else if num_epochs <= warmup_epochs {
+            lr
         } else {
             let progress = (epoch - warmup_epochs) as f64 / (num_epochs - warmup_epochs).max(1) as f64;
             min_lr + 0.5 * (lr - min_lr) * (1.0 + (std::f64::consts::PI * progress).cos())

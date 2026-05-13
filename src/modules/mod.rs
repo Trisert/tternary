@@ -1,4 +1,5 @@
 use burn::prelude::*;
+use burn::module::Param;
 use burn::nn::{Embedding, EmbeddingConfig};
 use burn::tensor::activation::sigmoid;
 use crate::ternary::TernaryLinear;
@@ -23,14 +24,14 @@ impl<B: Backend> TernaryEmbedding<B> {
 
 #[derive(Module, Debug)]
 pub struct TernaryRMSNorm<B: Backend> {
-    pub weight: Tensor<B, 1>,
+    pub weight: Param<Tensor<B, 1>>,
     pub eps: f64,
 }
 
 impl<B: Backend> TernaryRMSNorm<B> {
     pub fn new(embed_dim: usize, device: &B::Device) -> Self {
         Self {
-            weight: Tensor::ones([embed_dim], device),
+            weight: Param::from_tensor(Tensor::ones([embed_dim], device)),
             eps: 1e-8,
         }
     }
@@ -44,14 +45,14 @@ impl<B: Backend> TernaryRMSNorm<B> {
             .recip();
         let rms = rms.expand(x.dims());
         let [batch, seq, d] = x.dims();
-        let w = self.weight.clone().reshape([1, 1, d]).expand([batch, seq, d]);
+        let w = self.weight.val().reshape([1, 1, d]).expand([batch, seq, d]);
         x * rms * w
     }
 }
 
 #[derive(Module, Debug)]
 pub struct TernaryDepthwiseConv<B: Backend> {
-    pub weight: Tensor<B, 2>,
+    pub weight: Param<Tensor<B, 2>>,
     pub kernel_size: usize,
     pub seq_len: usize,
 }
@@ -63,9 +64,11 @@ impl<B: Backend> TernaryDepthwiseConv<B> {
         let data: Vec<f32> = (0..embed_dim * kernel_size)
             .map(|_| rng.gen_range(-1.0f32..1.0) * init_scale)
             .collect();
-        let weight = Tensor::from_data(
-            TensorData::new(data, [embed_dim, kernel_size]).convert::<B::FloatElem>(),
-            device,
+        let weight = Param::from_tensor(
+            Tensor::from_data(
+                TensorData::new(data, [embed_dim, kernel_size]).convert::<B::FloatElem>(),
+                device,
+            ),
         );
         Self { weight, kernel_size, seq_len }
     }
@@ -76,10 +79,11 @@ impl<B: Backend> TernaryDepthwiseConv<B> {
         let x_padded = Tensor::zeros([batch, seq + ks - 1, d], &x.device());
         let x_padded = x_padded.slice_assign([0..batch, ks - 1..ks - 1 + seq, 0..d], x.clone());
 
+        let weight = self.weight.val();
         let mut result = Tensor::zeros([batch, seq, d], &x.device());
         for k in 0..ks {
             let shifted = x_padded.clone().slice([0..batch, k..k + seq, 0..d]);
-            let wt_col = self.weight.clone().slice([0..d, k..k + 1]).reshape([d]);
+            let wt_col = weight.clone().slice([0..d, k..k + 1]).reshape([d]);
             let wt_bc = wt_col.reshape([1, 1, d]).expand([batch, seq, d]);
             result = result + shifted * wt_bc;
         }

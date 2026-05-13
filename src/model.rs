@@ -1,4 +1,5 @@
 use burn::prelude::*;
+use burn::module::Param;
 use burn::nn::loss::CrossEntropyLossConfig;
 use burn::tensor::backend::AutodiffBackend;
 use burn::train::{ClassificationOutput, TrainOutput, TrainStep, InferenceStep};
@@ -12,7 +13,7 @@ pub struct TernaryTransformer<B: Backend> {
     pos_embed: TernaryEmbedding<B>,
     blocks: Vec<BoltBlock<B>>,
     norm: crate::modules::TernaryRMSNorm<B>,
-    output_weight: Tensor<B, 2>,
+    output_weight: Param<Tensor<B, 2>>,
     vocab_size: usize,
     max_seq_len: usize,
 }
@@ -38,9 +39,11 @@ impl AppConfig {
         let data: Vec<f32> = (0..self.vocab_size * self.embed_dim)
             .map(|_| rng.gen_range(-1.0f32..1.0) * init_scale)
             .collect();
-        let output_weight = Tensor::from_data(
-            burn::tensor::TensorData::new(data, [self.vocab_size, self.embed_dim]).convert::<B::FloatElem>(),
-            device,
+        let output_weight = Param::from_tensor(
+            Tensor::from_data(
+                burn::tensor::TensorData::new(data, [self.vocab_size, self.embed_dim]).convert::<B::FloatElem>(),
+                device,
+            ),
         );
 
         TernaryTransformer {
@@ -79,7 +82,7 @@ impl<B: Backend> TernaryTransformer<B> {
         let hidden = self.forward(input_ids);
         let [batch, seq, d] = hidden.dims();
         let hidden_2d = hidden.reshape([batch * seq, d]);
-        let logits = hidden_2d.matmul(self.output_weight.clone().transpose());
+        let logits = hidden_2d.matmul(self.output_weight.val().transpose());
         logits.reshape([batch, seq, self.vocab_size])
     }
 
@@ -102,22 +105,22 @@ impl<B: Backend> TernaryTransformer<B> {
 
     pub fn num_parameters(&self) -> usize {
         let mut total = 0usize;
-        total += self.token_embed.embedding.weight.shape().num_elements();
-        total += self.pos_embed.embedding.weight.shape().num_elements();
-        total += self.output_weight.shape().num_elements();
-        total += self.norm.weight.shape().num_elements();
+        total += self.token_embed.embedding.weight.val().shape().num_elements();
+        total += self.pos_embed.embedding.weight.val().shape().num_elements();
+        total += self.output_weight.val().shape().num_elements();
+        total += self.norm.weight.val().shape().num_elements();
         for block in &self.blocks {
-            total += block.norm1.weight.shape().num_elements();
-            total += block.norm2.weight.shape().num_elements();
-            total += block.mixer.conv.weight.shape().num_elements();
-            total += block.mixer.gate.weight.shape().num_elements();
-            total += block.mixer.gate.bias.shape().num_elements();
-            total += block.ffn.w_gate.weight.shape().num_elements();
-            total += block.ffn.w_gate.bias.shape().num_elements();
-            total += block.ffn.w_up.weight.shape().num_elements();
-            total += block.ffn.w_up.bias.shape().num_elements();
-            total += block.ffn.w_down.weight.shape().num_elements();
-            total += block.ffn.w_down.bias.shape().num_elements();
+            total += block.norm1.weight.val().shape().num_elements();
+            total += block.norm2.weight.val().shape().num_elements();
+            total += block.mixer.conv.weight.val().shape().num_elements();
+            total += block.mixer.gate.weight.val().shape().num_elements();
+            total += block.mixer.gate.bias.val().shape().num_elements();
+            total += block.ffn.w_gate.weight.val().shape().num_elements();
+            total += block.ffn.w_gate.bias.val().shape().num_elements();
+            total += block.ffn.w_up.weight.val().shape().num_elements();
+            total += block.ffn.w_up.bias.val().shape().num_elements();
+            total += block.ffn.w_down.weight.val().shape().num_elements();
+            total += block.ffn.w_down.bias.val().shape().num_elements();
         }
         total
     }
