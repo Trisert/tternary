@@ -1,28 +1,24 @@
-#[derive(Clone, Copy)]
-pub struct Config {
-    pub vocab_size: usize,
-    pub embed_dim: usize,
-    pub hidden_dim: usize,
-    pub num_layers: usize,
-    pub max_seq_len: usize,
-    pub batch_size: usize,
-    pub learning_rate: f32,
-    pub max_grad_norm: f32,
-    pub kernel_size: usize,
-}
+use burn::config::Config;
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            vocab_size: 3000,
-            embed_dim: 256,
-            hidden_dim: 512,
-            num_layers: 6,
-            max_seq_len: 512,
-            batch_size: 16,
-            learning_rate: 0.003,
-            max_grad_norm: 1.0,
-            kernel_size: 8,
-        }
-    }
+#[derive(Config, Debug)]
+pub struct AppConfig {
+    pub vocab_size: usize,
+    #[config(default = 256)]
+    pub embed_dim: usize,
+    #[config(default = 512)]
+    pub hidden_dim: usize,
+    #[config(default = 6)]
+    pub num_layers: usize,
+    #[config(default = 512)]
+    pub max_seq_len: usize,
+    #[config(default = 16)]
+    pub batch_size: usize,
+    #[config(default = 8)]
+    pub kernel_size: usize,
+    #[config(default = 10)]
+    pub num_epochs: usize,
+    #[config(default = 500)]
+    pub steps_per_epoch: usize,
+    #[config(default = 0.003)]
+    pub learning_rate: f64,
 }
