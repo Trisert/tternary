@@ -2,7 +2,8 @@
 
 use tternary::{AppConfig, TernaryTransformer, EncodedDataset};
 use burn::prelude::*;
-use burn::backend::{Autodiff, Wgpu};
+use burn::backend::{Autodiff, NdArray};
+use burn::backend::ndarray::NdArrayDevice;
 use burn::module::AutodiffModule;
 use burn::optim::AdamConfig;
 use burn::tensor::{TensorData, activation::softmax};
@@ -23,8 +24,8 @@ use tokenizers::Tokenizer;
 use ahash::AHashMap;
 use rand::Rng;
 
-type MyBackend = Autodiff<Wgpu>;
-type InnerB = Wgpu;
+type MyBackend = Autodiff<NdArray>;
+type InnerB = NdArray;
 
 const ENCODED_FILE: &str = "data/tinystories_encoded.bin";
 const TOKENIZER_FILE: &str = "data/tokenizer.json";
@@ -179,7 +180,7 @@ fn generate_sample<B: Backend>(
 }
 
 fn main() {
-    println!("=== Ternary Transformer (burn-rs / WGPU) ===\n");
+    println!("=== Ternary Transformer (burn-rs / NdArray) ===\n");
 
     let args: Vec<String> = env::args().collect();
     let num_epochs = args.iter()
@@ -208,7 +209,7 @@ fn main() {
              config.embed_dim, config.hidden_dim,
              config.num_layers, config.max_seq_len, config.kernel_size);
 
-    let device = Default::default();
+    let device = NdArrayDevice::Cpu;
     let model: TernaryTransformer<MyBackend> = config.init(&device);
     println!("Parameters: {}", model.num_parameters());
 

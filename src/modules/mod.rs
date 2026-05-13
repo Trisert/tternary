@@ -77,17 +77,17 @@ impl<B: Backend> TernaryDepthwiseConv<B> {
         let [batch, seq, d] = x.dims();
         let ks = self.kernel_size;
         let x_padded = Tensor::zeros([batch, seq + ks - 1, d], &x.device());
-        let x_padded = x_padded.slice_assign([0..batch, ks - 1..ks - 1 + seq, 0..d], x.clone());
+        let x_padded = x_padded.slice_assign([0..batch, ks - 1..ks - 1 + seq, 0..d], x);
 
+        let views: Vec<Tensor<B, 4>> = (0..ks)
+            .map(|k| x_padded.clone().slice([0..batch, k..k + seq, 0..d]).unsqueeze_dim(2))
+            .collect();
+        let stacked = Tensor::cat(views, 2);
         let weight = self.weight.val();
-        let mut result = Tensor::zeros([batch, seq, d], &x.device());
-        for k in 0..ks {
-            let shifted = x_padded.clone().slice([0..batch, k..k + seq, 0..d]);
-            let wt_col = weight.clone().slice([0..d, k..k + 1]).reshape([d]);
-            let wt_bc = wt_col.reshape([1, 1, d]).expand([batch, seq, d]);
-            result = result + shifted * wt_bc;
-        }
-        result
+        let w = weight.transpose()
+            .reshape([1, ks, d])
+            .expand([batch, seq, ks, d]);
+        (stacked * w).sum_dim(2).reshape([batch, seq, d])
     }
 }
 
