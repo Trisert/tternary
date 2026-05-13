@@ -22,6 +22,8 @@ use tokenizers::models::bpe::trainer::BpeTrainer;
 use tokenizers::tokenizer::{TokenizerImpl, NormalizerWrapper, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper};
 use tokenizers::Tokenizer;
 use ahash::AHashMap;
+use std::sync::Arc;
+use std::sync::mpsc::sync_channel;
 use rand::Rng;
 
 type MyBackend = Autodiff<NdArray>;
@@ -213,7 +215,7 @@ fn main() {
     let model: TernaryTransformer<MyBackend> = config.init(&device);
     println!("Parameters: {}", model.num_parameters());
 
-    let dataset = EncodedDataset::open(&encoded_path, config.max_seq_len);
+    let dataset = Arc::new(EncodedDataset::open(&encoded_path, config.max_seq_len));
     println!("Dataset: {} tokens ({:.1} MB on disk)", num_tokens, num_tokens as f64 * 4.0 / 1e6);
 
     let mut optim = AdamConfig::new().init::<MyBackend, TernaryTransformer<MyBackend>>();
@@ -225,6 +227,20 @@ fn main() {
     let warmup_epochs = 1;
     let min_lr = lr * 0.1;
     let total_start = std::time::Instant::now();
+
+    let total_steps = num_epochs * steps_per_epoch;
+    let (batch_tx, batch_rx) = sync_channel(2);
+    {
+        let ds = dataset.clone();
+        let bs = config.batch_size;
+        std::thread::spawn(move || {
+            for _ in 0..total_steps {
+                if batch_tx.send(ds.get_random_batch(bs)).is_err() {
+                    break;
+                }
+            }
+        });
+    }
 
     for epoch in 0..num_epochs {
         let epoch_start = std::time::Instant::now();
@@ -240,7 +256,7 @@ fn main() {
         };
 
         for _ in 0..steps_per_epoch {
-            let (input_buf, target_buf) = dataset.get_random_batch(config.batch_size);
+            let (input_buf, target_buf) = batch_rx.recv().unwrap();
             let (input_tensor, target_tensor) = dataset::make_batch::<MyBackend>(
                 input_buf, target_buf, config.batch_size, config.max_seq_len, &device,
             );

@@ -59,7 +59,7 @@ pub struct TernaryDepthwiseConv<B: Backend> {
 
 impl<B: Backend> TernaryDepthwiseConv<B> {
     pub fn new(embed_dim: usize, kernel_size: usize, seq_len: usize, device: &B::Device) -> Self {
-        let init_scale = (2.0 / (kernel_size as f32).sqrt()) * 0.5;
+        let init_scale = (2.0_f32 / kernel_size as f32).sqrt();
         let mut rng = rand::thread_rng();
         let data: Vec<f32> = (0..embed_dim * kernel_size)
             .map(|_| rng.gen_range(-1.0f32..1.0) * init_scale)
@@ -76,6 +76,7 @@ impl<B: Backend> TernaryDepthwiseConv<B> {
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let [batch, seq, d] = x.dims();
         let ks = self.kernel_size;
+        debug_assert!(ks <= seq, "kernel_size ({}) must be <= seq_len ({})", ks, seq);
         let x_padded = Tensor::zeros([batch, seq + ks - 1, d], &x.device());
         let x_padded = x_padded.slice_assign([0..batch, ks - 1..ks - 1 + seq, 0..d], x);
 

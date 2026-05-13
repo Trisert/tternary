@@ -35,13 +35,13 @@ impl AppConfig {
         let norm = crate::modules::TernaryRMSNorm::new(self.embed_dim, device);
 
         let mut rng = rand::thread_rng();
-        let init_scale = (2.0 / (self.vocab_size as f32).sqrt()) * 0.5;
-        let data: Vec<f32> = (0..self.vocab_size * self.embed_dim)
+        let init_scale = (2.0_f32 / self.embed_dim as f32).sqrt();
+        let data: Vec<f32> = (0..self.embed_dim * self.vocab_size)
             .map(|_| rng.gen_range(-1.0f32..1.0) * init_scale)
             .collect();
         let output_weight = Param::from_tensor(
             Tensor::from_data(
-                burn::tensor::TensorData::new(data, [self.vocab_size, self.embed_dim]).convert::<B::FloatElem>(),
+                burn::tensor::TensorData::new(data, [self.embed_dim, self.vocab_size]).convert::<B::FloatElem>(),
                 device,
             ),
         );
@@ -82,7 +82,7 @@ impl<B: Backend> TernaryTransformer<B> {
         let hidden = self.forward(input_ids);
         let [batch, seq, d] = hidden.dims();
         let hidden_2d = hidden.reshape([batch * seq, d]);
-        let logits = hidden_2d.matmul(self.output_weight.val().transpose());
+        let logits = hidden_2d.matmul(self.output_weight.val());
         logits.reshape([batch, seq, self.vocab_size])
     }
 
