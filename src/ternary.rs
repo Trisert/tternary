@@ -1,6 +1,6 @@
 use burn::prelude::*;
 use burn::module::Param;
-use burn::tensor::TensorData;
+use burn::tensor::{ElementConversion, TensorData};
 use rand::Rng;
 
 #[derive(Module, Debug)]
@@ -28,25 +28,16 @@ impl<B: Backend> TernaryLinear<B> {
 
     pub fn forward(&self, input: Tensor<B, 2>) -> Tensor<B, 2> {
         let w = self.weight.val();
+        let w_detached = w.clone().detach();
 
-        let w_detached = Tensor::from_data(w.clone().into_data(), &w.device());
-
-        let scale_val: f32 = w_detached
-            .clone()
-            .abs()
-            .into_data()
-            .to_vec::<f32>()
-            .unwrap()
-            .iter()
-            .sum::<f32>()
-            / (w.dims()[0] * w.dims()[1]) as f32;
+        let scale_val: f32 = w_detached.clone().abs().mean().into_scalar().elem::<f32>();
         let threshold = scale_val * 0.5;
 
         let pos = w_detached.clone().greater_elem(threshold).float();
         let neg = w_detached.clone().lower_elem(-threshold).float();
         let w_ternary = (pos - neg) * scale_val;
 
-        let w_ste = w_ternary - w_detached + w;
+        let w_ste = w_ternary + (w - w_detached);
 
         let out = input.matmul(w_ste);
         let [rows, cols] = out.dims();

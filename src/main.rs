@@ -228,16 +228,13 @@ fn main() {
     let min_lr = lr * 0.1;
     let total_start = std::time::Instant::now();
 
-    let total_steps = num_epochs * steps_per_epoch;
     let (batch_tx, batch_rx) = sync_channel(2);
     {
         let ds = dataset.clone();
         let bs = config.batch_size;
-        std::thread::spawn(move || {
-            for _ in 0..total_steps {
-                if batch_tx.send(ds.get_random_batch(bs)).is_err() {
-                    break;
-                }
+        std::thread::spawn(move || loop {
+            if batch_tx.send(ds.get_random_batch(bs)).is_err() {
+                break;
             }
         });
     }
