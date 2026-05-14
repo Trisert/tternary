@@ -63,7 +63,7 @@ mod backend {
 
 use backend::{MyBackend, InnerB};
 
-const ENCODED_FILE: &str = "data/tinystories_encoded.bin";
+const ENCODED_FILE: &str = "data/tinystories_encoded_u16.bin";
 const TOKENIZER_FILE: &str = "data/tokenizer.json";
 const BPE_VOCAB_SIZE: usize = 4096;
 
@@ -146,7 +146,7 @@ fn encode_dataset_parallel(tokenizer: &Tokenizer, text_path: &str) -> Result<usi
     for chunk in &encoded_chunks {
         for ids in chunk {
             for &id in ids {
-                writer.write_all(&id.to_le_bytes())?;
+                writer.write_all(&(id as u16).to_le_bytes())?;
             }
             total_tokens += ids.len();
         }
@@ -168,7 +168,7 @@ fn load_tokenizer(path: &str) -> Result<Tokenizer, BoxedError> {
 fn prepare_dataset() -> Result<(String, usize, Tokenizer), BoxedError> {
     std::fs::create_dir_all("data/")?;
     if std::path::Path::new(ENCODED_FILE).exists() && std::path::Path::new(TOKENIZER_FILE).exists() {
-        let len = std::fs::metadata(ENCODED_FILE)?.len() as usize / 4;
+        let len = std::fs::metadata(ENCODED_FILE)?.len() as usize / 2;
         println!("Found cached encoded dataset ({} tokens)", len);
         let tokenizer = load_tokenizer(TOKENIZER_FILE)?;
         return Ok((ENCODED_FILE.to_string(), len, tokenizer));
@@ -300,7 +300,7 @@ fn main() {
     println!("Parameters: {}", model.num_parameters());
 
     let dataset = Arc::new(EncodedDataset::open(&encoded_path, config.max_seq_len));
-    println!("Dataset: {} tokens ({:.1} MB on disk)", num_tokens, num_tokens as f64 * 4.0 / 1e6);
+    println!("Dataset: {} tokens ({:.1} MB on disk)", num_tokens, num_tokens as f64 * 2.0 / 1e6);
 
     let mut optim = AdamConfig::new().init::<MyBackend, TernaryTransformer<MyBackend>>();
 

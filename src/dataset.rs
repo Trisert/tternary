@@ -16,20 +16,18 @@ unsafe impl Sync for EncodedDataset {}
 impl EncodedDataset {
     pub fn open(path: &str, max_seq_len: usize) -> Self {
         let file = File::open(path).expect("Failed to open encoded dataset");
-        let len = file.metadata().expect("Failed to get file metadata").len() as usize / 4;
+        let len = file.metadata().expect("Failed to get file metadata").len() as usize / 2;
         let mmap = unsafe { Mmap::map(&file).expect("Failed to mmap dataset") };
         Self { mmap, len, max_seq_len }
     }
 
     #[inline]
     fn token_at(&self, idx: usize) -> u32 {
-        let byte_off = idx * 4;
-        u32::from_le_bytes([
+        let byte_off = idx * 2;
+        u16::from_le_bytes([
             self.mmap[byte_off],
             self.mmap[byte_off + 1],
-            self.mmap[byte_off + 2],
-            self.mmap[byte_off + 3],
-        ])
+        ]) as u32
     }
 
     pub fn get_random_batch(&self, batch_size: usize) -> (Vec<i32>, Vec<i32>) {
