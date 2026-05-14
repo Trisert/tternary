@@ -17,6 +17,7 @@ use std::io::Write;
 use tokenizers::models::bpe::BPE;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::models::bpe::trainer::BpeTrainer;
+use tokenizers::decoders::byte_level::ByteLevel as ByteLevelDecoder;
 use tokenizers::tokenizer::{TokenizerImpl, NormalizerWrapper, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper};
 use tokenizers::Tokenizer;
 use ahash::AHashMap;
@@ -71,6 +72,7 @@ fn train_tokenizer(text_path: &str) -> Result<Tokenizer, BoxedError> {
     let mut tokenizer: TokenizerImpl<BPE, NormalizerWrapper, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper> =
         TokenizerImpl::new(BPE::new(AHashMap::new(), Vec::new()));
     tokenizer.with_pre_tokenizer(Some(ByteLevel::new(false, false, true)));
+    tokenizer.with_decoder(Some(ByteLevelDecoder::new(true, false, false)));
 
     let mut trainer = BpeTrainer::builder()
         .vocab_size(BPE_VOCAB_SIZE)
@@ -79,7 +81,7 @@ fn train_tokenizer(text_path: &str) -> Result<Tokenizer, BoxedError> {
     println!("  Training complete, saving...");
     tokenizer.save(TOKENIZER_FILE, true)?;
     println!("  Saved to {}", TOKENIZER_FILE);
-    let trained = Tokenizer::from_file(TOKENIZER_FILE)?;
+    let trained = load_tokenizer(TOKENIZER_FILE)?;
     Ok(trained)
 }
 
@@ -134,12 +136,18 @@ fn encode_dataset_parallel(tokenizer: &Tokenizer, text_path: &str) -> Result<usi
     Ok(total_tokens)
 }
 
+fn load_tokenizer(path: &str) -> Result<Tokenizer, BoxedError> {
+    let mut tokenizer = Tokenizer::from_file(path)?;
+    tokenizer.with_decoder(Some(ByteLevelDecoder::new(true, false, false)));
+    Ok(tokenizer)
+}
+
 fn prepare_dataset() -> Result<(String, usize, Tokenizer), BoxedError> {
     std::fs::create_dir_all("data/")?;
     if std::path::Path::new(ENCODED_FILE).exists() && std::path::Path::new(TOKENIZER_FILE).exists() {
         let len = std::fs::metadata(ENCODED_FILE)?.len() as usize / 4;
         println!("Found cached encoded dataset ({} tokens)", len);
-        let tokenizer = Tokenizer::from_file(TOKENIZER_FILE)?;
+        let tokenizer = load_tokenizer(TOKENIZER_FILE)?;
         return Ok((ENCODED_FILE.to_string(), len, tokenizer));
     }
 
@@ -154,7 +162,7 @@ fn prepare_dataset() -> Result<(String, usize, Tokenizer), BoxedError> {
 
     let tokenizer = if std::path::Path::new(TOKENIZER_FILE).exists() {
         println!("Loading cached tokenizer...");
-        Tokenizer::from_file(TOKENIZER_FILE)?
+        load_tokenizer(TOKENIZER_FILE)?
     } else {
         train_tokenizer(&text_path_str)?
     };
