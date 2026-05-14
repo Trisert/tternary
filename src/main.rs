@@ -8,7 +8,7 @@ use burn::tensor::{TensorData, activation::softmax};
 use burn::train::TrainStep;
 use memmap2::Mmap;
 use rayon::prelude::*;
-use burn::record::{BinFileRecorder, FullPrecisionSettings};
+use burn::store::{ModuleSnapshot, SafetensorsStore};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::BufWriter;
 use tternary::model::TernaryTransformerTrainingBatch;
@@ -278,16 +278,15 @@ fn main() {
              config.num_layers, config.max_seq_len, config.kernel_size);
 
     let device = backend::device();
-    let recorder = BinFileRecorder::<FullPrecisionSettings>::new();
 
     // Inference-only mode
     if steps_per_epoch == 0 && gen_tokens > 0 {
-        let best_path = "checkpoints/best.bin";
+        let best_path = "checkpoints/best.safetensors";
         if std::path::Path::new(best_path).exists() {
             println!("Loading best checkpoint from {} ...", best_path);
-            let model: TernaryTransformer<MyBackend> = config.init(&device)
-                .load_file("checkpoints/best", &recorder, &device)
-                .expect("Failed to load checkpoint");
+            let mut model: TernaryTransformer<MyBackend> = config.init(&device);
+            let mut store = SafetensorsStore::from_file(best_path);
+            model.load_from(&mut store).expect("Failed to load checkpoint");
             let inner_model = model.valid();
             println!("\n--- Generated Text ({} tokens) ---", gen_tokens);
             generate_sample::<InnerB>(&inner_model, &tokenizer, gen_tokens, &device);
@@ -363,13 +362,13 @@ fn main() {
         println!("Epoch {:>3} | Loss: {:.4} | LR: {:.6} | Time: {:.2}s",
                  epoch + 1, avg_loss, current_lr, epoch_start.elapsed().as_secs_f64());
 
-        let ckpt_path = format!("{}/epoch_{:04}", ckpt_dir, epoch + 1);
-        model.clone().save_file(&ckpt_path, &recorder)
+        let ckpt_path = format!("{}/epoch_{:04}.safetensors", ckpt_dir, epoch + 1);
+        model.save_into(&mut SafetensorsStore::from_file(&ckpt_path))
             .unwrap_or_else(|e| eprintln!("  Warning: failed to save checkpoint: {}", e));
 
         if avg_loss < best_loss {
             best_loss = avg_loss;
-            model.clone().save_file(&format!("{}/best", ckpt_dir), &recorder)
+            model.save_into(&mut SafetensorsStore::from_file(format!("{}/best.safetensors", ckpt_dir)))
                 .unwrap_or_else(|e| eprintln!("  Warning: failed to save best checkpoint: {}", e));
             println!("  New best loss: {:.4}", best_loss);
         }
@@ -384,12 +383,12 @@ fn main() {
     println!("\nTotal training time: {:.2}s", total_time);
     println!("Best loss: {:.4}", best_loss);
 
-    let best_path = format!("{}/best.bin", ckpt_dir);
+    let best_path = format!("{}/best.safetensors", ckpt_dir);
     if std::path::Path::new(&best_path).exists() {
         println!("\n--- Best Checkpoint Generated Text ---");
-        let model: TernaryTransformer<MyBackend> = config.init(&device)
-            .load_file("checkpoints/best", &recorder, &device)
-            .expect("Failed to load best checkpoint");
+        let mut model: TernaryTransformer<MyBackend> = config.init(&device);
+        let mut store = SafetensorsStore::from_file(&best_path);
+        model.load_from(&mut store).expect("Failed to load best checkpoint");
         let inner_model = model.valid();
         generate_sample::<InnerB>(&inner_model, &tokenizer, 200, &device);
     } else {
