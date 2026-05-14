@@ -2,8 +2,6 @@
 
 use tternary::{AppConfig, TernaryTransformer, EncodedDataset};
 use burn::prelude::*;
-use burn::backend::{Autodiff, NdArray};
-use burn::backend::ndarray::NdArrayDevice;
 use burn::module::AutodiffModule;
 use burn::optim::AdamConfig;
 use burn::tensor::{TensorData, activation::softmax};
@@ -26,8 +24,41 @@ use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
 use rand::Rng;
 
-type MyBackend = Autodiff<NdArray>;
-type InnerB = NdArray;
+#[cfg(feature = "cuda")]
+mod backend {
+    use burn::backend::{Autodiff, Cuda};
+    use burn::backend::cuda::CudaDevice;
+
+    pub type MyBackend = Autodiff<Cuda>;
+    pub type InnerB = Cuda;
+
+    pub fn device() -> CudaDevice {
+        CudaDevice::new(0)
+    }
+
+    pub fn label() -> &'static str {
+        "CUDA"
+    }
+}
+
+#[cfg(not(feature = "cuda"))]
+mod backend {
+    use burn::backend::{Autodiff, NdArray};
+    use burn::backend::ndarray::NdArrayDevice;
+
+    pub type MyBackend = Autodiff<NdArray>;
+    pub type InnerB = NdArray;
+
+    pub fn device() -> NdArrayDevice {
+        NdArrayDevice::Cpu
+    }
+
+    pub fn label() -> &'static str {
+        "NdArray/CPU"
+    }
+}
+
+use backend::{MyBackend, InnerB};
 
 const ENCODED_FILE: &str = "data/tinystories_encoded.bin";
 const TOKENIZER_FILE: &str = "data/tokenizer.json";
@@ -182,7 +213,7 @@ fn generate_sample<B: Backend>(
 }
 
 fn main() {
-    println!("=== Ternary Transformer (burn-rs / NdArray) ===\n");
+    println!("=== Ternary Transformer (burn-rs / {}) ===\n", backend::label());
 
     let args: Vec<String> = env::args().collect();
     let num_epochs = args.iter()
@@ -211,7 +242,7 @@ fn main() {
              config.embed_dim, config.hidden_dim,
              config.num_layers, config.max_seq_len, config.kernel_size);
 
-    let device = NdArrayDevice::Cpu;
+    let device = backend::device();
     let model: TernaryTransformer<MyBackend> = config.init(&device);
     println!("Parameters: {}", model.num_parameters());
 

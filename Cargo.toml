@@ -23,3 +23,7 @@ panic = "abort"
 
 [profile.release.build-override]
 opt-level = 3
+
+[features]
+default = []
+cuda = ["burn/cuda", "burn/fusion"]
