@@ -363,12 +363,12 @@ fn main() {
                  epoch + 1, avg_loss, current_lr, epoch_start.elapsed().as_secs_f64());
 
         let ckpt_path = format!("{}/epoch_{:04}.safetensors", ckpt_dir, epoch + 1);
-        model.save_into(&mut SafetensorsStore::from_file(&ckpt_path))
+        model.save_into(&mut SafetensorsStore::from_file(&ckpt_path).overwrite(true))
             .unwrap_or_else(|e| eprintln!("  Warning: failed to save checkpoint: {}", e));
 
         if avg_loss < best_loss {
             best_loss = avg_loss;
-            model.save_into(&mut SafetensorsStore::from_file(format!("{}/best.safetensors", ckpt_dir)))
+            model.save_into(&mut SafetensorsStore::from_file(format!("{}/best.safetensors", ckpt_dir)).overwrite(true))
                 .unwrap_or_else(|e| eprintln!("  Warning: failed to save best checkpoint: {}", e));
             println!("  New best loss: {:.4}", best_loss);
         }
