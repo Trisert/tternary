@@ -8,6 +8,7 @@ use burn::tensor::{TensorData, activation::softmax};
 use burn::train::TrainStep;
 use memmap2::Mmap;
 use rayon::prelude::*;
+use burn::record::{BinFileRecorder, FullPrecisionSettings};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::BufWriter;
 use tternary::model::TernaryTransformerTrainingBatch;
@@ -258,6 +259,10 @@ fn main() {
         .position(|a| a == "--lr")
         .and_then(|i| args.get(i + 1)?.parse().ok())
         .unwrap_or(0.003);
+    let gen_tokens: usize = args.iter()
+        .position(|a| a == "--generate")
+        .and_then(|i| args.get(i + 1)?.parse().ok())
+        .unwrap_or(0);
 
     let (encoded_path, num_tokens, tokenizer) = prepare_dataset().expect("Failed to prepare dataset");
     let vocab_size = tokenizer.get_vocab_size(true);
@@ -273,6 +278,25 @@ fn main() {
              config.num_layers, config.max_seq_len, config.kernel_size);
 
     let device = backend::device();
+    let recorder = BinFileRecorder::<FullPrecisionSettings>::new();
+
+    // Inference-only mode
+    if steps_per_epoch == 0 && gen_tokens > 0 {
+        let best_path = "checkpoints/best.bin";
+        if std::path::Path::new(best_path).exists() {
+            println!("Loading best checkpoint from {} ...", best_path);
+            let model: TernaryTransformer<MyBackend> = config.init(&device)
+                .load_file("checkpoints/best", &recorder, &device)
+                .expect("Failed to load checkpoint");
+            let inner_model = model.valid();
+            println!("\n--- Generated Text ({} tokens) ---", gen_tokens);
+            generate_sample::<InnerB>(&inner_model, &tokenizer, gen_tokens, &device);
+            return;
+        }
+        eprintln!("No checkpoint found at {}. Train with --steps N first.", best_path);
+        std::process::exit(1);
+    }
+
     let model: TernaryTransformer<MyBackend> = config.init(&device);
     println!("Parameters: {}", model.num_parameters());
 
@@ -288,6 +312,10 @@ fn main() {
     let warmup_epochs = 1;
     let min_lr = lr * 0.1;
     let total_start = std::time::Instant::now();
+    let mut best_loss = f32::INFINITY;
+
+    let ckpt_dir = "checkpoints";
+    std::fs::create_dir_all(ckpt_dir).ok();
 
     let (batch_tx, batch_rx) = sync_channel(2);
     {
@@ -335,6 +363,17 @@ fn main() {
         println!("Epoch {:>3} | Loss: {:.4} | LR: {:.6} | Time: {:.2}s",
                  epoch + 1, avg_loss, current_lr, epoch_start.elapsed().as_secs_f64());
 
+        let ckpt_path = format!("{}/epoch_{:04}", ckpt_dir, epoch + 1);
+        model.clone().save_file(&ckpt_path, &recorder)
+            .unwrap_or_else(|e| eprintln!("  Warning: failed to save checkpoint: {}", e));
+
+        if avg_loss < best_loss {
+            best_loss = avg_loss;
+            model.clone().save_file(&format!("{}/best", ckpt_dir), &recorder)
+                .unwrap_or_else(|e| eprintln!("  Warning: failed to save best checkpoint: {}", e));
+            println!("  New best loss: {:.4}", best_loss);
+        }
+
         if epoch % 5 == 0 || epoch == num_epochs - 1 {
             let inner_model = model.valid();
             generate_sample::<InnerB>(&inner_model, &tokenizer, 60, &device);
@@ -343,7 +382,19 @@ fn main() {
 
     let total_time = total_start.elapsed().as_secs_f64();
     println!("\nTotal training time: {:.2}s", total_time);
-    println!("\n--- Final Generated Text ---");
-    let inner_model = model.valid();
-    generate_sample::<InnerB>(&inner_model, &tokenizer, 200, &device);
+    println!("Best loss: {:.4}", best_loss);
+
+    let best_path = format!("{}/best.bin", ckpt_dir);
+    if std::path::Path::new(&best_path).exists() {
+        println!("\n--- Best Checkpoint Generated Text ---");
+        let model: TernaryTransformer<MyBackend> = config.init(&device)
+            .load_file("checkpoints/best", &recorder, &device)
+            .expect("Failed to load best checkpoint");
+        let inner_model = model.valid();
+        generate_sample::<InnerB>(&inner_model, &tokenizer, 200, &device);
+    } else {
+        println!("\n--- Final Model Generated Text ---");
+        let inner_model = model.valid();
+        generate_sample::<InnerB>(&inner_model, &tokenizer, 200, &device);
+    }
 }
