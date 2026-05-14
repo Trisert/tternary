@@ -27,13 +27,14 @@
         cudaLibs = with cudaPkgs; [
           cuda_nvcc
           cuda_cudart
+          cuda_nvrtc
           libcublas
           cuda_nvtx
         ];
 
         cudaToolkit = pkgs.symlinkJoin {
           name = "cuda-toolkit";
-          paths = cudaLibs;
+          paths = cudaLibs ++ builtins.map (p: lib.getLib p) cudaLibs;
         };
 
         cudaLibPath = lib.concatStringsSep ":" (
