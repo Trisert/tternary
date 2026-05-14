@@ -8,6 +8,7 @@ use burn::tensor::{TensorData, activation::softmax};
 use burn::train::TrainStep;
 use memmap2::Mmap;
 use rayon::prelude::*;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::io::BufWriter;
 use tternary::model::TernaryTransformerTrainingBatch;
 use tternary::dataset;
@@ -94,7 +95,7 @@ fn encode_dataset_parallel(tokenizer: &Tokenizer, text_path: &str) -> Result<usi
     let chunk_size = 10_000;
     let lines: Vec<&str> = text.lines().collect();
     let total_lines = lines.len();
-    println!("  {} lines to encode", total_lines);
+    let num_chunks = (total_lines + chunk_size - 1) / chunk_size;
 
     let out_file = File::create(ENCODED_FILE)?;
     let mut writer = BufWriter::with_capacity(64 * 1024 * 1024, out_file);
@@ -102,20 +103,43 @@ fn encode_dataset_parallel(tokenizer: &Tokenizer, text_path: &str) -> Result<usi
     let tokenizer_clone = tokenizer.clone();
     let chunks: Vec<Vec<&str>> = lines.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
-    println!("  Encoding with {} chunks on {} threads...", chunks.len(), rayon::current_num_threads());
+    let enc_pb = ProgressBar::new(total_lines as u64);
+    enc_pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{msg} [{bar:40}] {pos}/{len} lines ({eta})")
+            .unwrap()
+            .progress_chars("=> "),
+    );
+    enc_pb.set_message("  Encoding");
 
+    println!("  {} threads", rayon::current_num_threads());
+
+    let enc_pb_clone = enc_pb.clone();
     let encoded_chunks: Vec<Vec<Vec<u32>>> = chunks
         .par_iter()
         .map(|chunk| {
             let encodings = tokenizer_clone
                 .encode_batch_fast(chunk.clone(), false)
                 .unwrap();
-            encodings
+            let result: Vec<Vec<u32>> = encodings
                 .into_iter()
                 .map(|e| e.get_ids().to_vec())
-                .collect::<Vec<Vec<u32>>>()
+                .collect();
+            enc_pb_clone.inc(chunk.len() as u64);
+            result
         })
         .collect();
+
+    enc_pb.finish_and_clear();
+
+    let write_pb = ProgressBar::new(num_chunks as u64);
+    write_pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{msg} [{bar:40}] {pos}/{len} chunks ({eta})")
+            .unwrap()
+            .progress_chars("=> "),
+    );
+    write_pb.set_message("  Writing");
 
     let mut total_tokens = 0usize;
     for chunk in &encoded_chunks {
@@ -125,14 +149,12 @@ fn encode_dataset_parallel(tokenizer: &Tokenizer, text_path: &str) -> Result<usi
             }
             total_tokens += ids.len();
         }
-        if total_tokens % 50_000_000 < chunk_size * 200 {
-            print!("\r  Encoded {}M tokens...", total_tokens / 1_000_000);
-            std::io::stdout().flush()?;
-        }
+        write_pb.inc(1);
     }
     writer.flush()?;
+    write_pb.finish_and_clear();
 
-    println!("\r  Encoded {}M tokens.      ", total_tokens / 1_000_000);
+    println!("  Encoded {}M tokens.      ", total_tokens / 1_000_000);
     Ok(total_tokens)
 }
 
