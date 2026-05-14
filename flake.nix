@@ -31,6 +31,11 @@
           cuda_nvtx
         ];
 
+        cudaToolkit = pkgs.symlinkJoin {
+          name = "cuda-toolkit";
+          paths = cudaLibs;
+        };
+
         cudaLibPath = lib.concatStringsSep ":" (
           builtins.map (p: "${lib.getLib p}/lib") cudaLibs
         );
@@ -92,6 +97,8 @@
 
           env = {
             OPENBLAS_NUM_THREADS = "1";
+
+            CUDA_PATH = "${cudaToolkit}";
 
             CUDARC_CUDA_VERSION = "12000";
 
