@@ -45,10 +45,10 @@ class TernaryDepthwiseConv(nn.Module):
 
 
 class GatedConvMixer(nn.Module):
-    def __init__(self, embed_dim: int, kernel_size: int, seq_len: int):
+    def __init__(self, embed_dim: int, kernel_size: int, seq_len: int, ternary_threshold: float = 0.5):
         super().__init__()
         self.conv = TernaryDepthwiseConv(embed_dim, kernel_size, seq_len)
-        self.gate = TernaryLinear(embed_dim, embed_dim)
+        self.gate = TernaryLinear(embed_dim, embed_dim, ternary_threshold)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         conv_out = self.conv(x)
@@ -58,11 +58,11 @@ class GatedConvMixer(nn.Module):
 
 
 class TernaryGLUFFN(nn.Module):
-    def __init__(self, embed_dim: int, hidden_dim: int):
+    def __init__(self, embed_dim: int, hidden_dim: int, ternary_threshold: float = 0.5):
         super().__init__()
-        self.w_gate = TernaryLinear(embed_dim, hidden_dim)
-        self.w_up = TernaryLinear(embed_dim, hidden_dim)
-        self.w_down = TernaryLinear(hidden_dim, embed_dim)
+        self.w_gate = TernaryLinear(embed_dim, hidden_dim, ternary_threshold)
+        self.w_up = TernaryLinear(embed_dim, hidden_dim, ternary_threshold)
+        self.w_down = TernaryLinear(hidden_dim, embed_dim, ternary_threshold)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         gate = F.silu(self.w_gate(x))
@@ -71,12 +71,12 @@ class TernaryGLUFFN(nn.Module):
 
 
 class BoltBlock(nn.Module):
-    def __init__(self, embed_dim: int, hidden_dim: int, kernel_size: int, seq_len: int):
+    def __init__(self, embed_dim: int, hidden_dim: int, kernel_size: int, seq_len: int, ternary_threshold: float = 0.5):
         super().__init__()
         self.norm1 = TernaryRMSNorm(embed_dim)
-        self.mixer = GatedConvMixer(embed_dim, kernel_size, seq_len)
+        self.mixer = GatedConvMixer(embed_dim, kernel_size, seq_len, ternary_threshold)
         self.norm2 = TernaryRMSNorm(embed_dim)
-        self.ffn = TernaryGLUFFN(embed_dim, hidden_dim)
+        self.ffn = TernaryGLUFFN(embed_dim, hidden_dim, ternary_threshold)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.mixer(self.norm1(x))

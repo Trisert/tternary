@@ -14,7 +14,7 @@ class TernaryTransformer(nn.Module):
         self.token_embed = TernaryEmbedding(config.vocab_size, config.embed_dim)
         self.pos_embed = TernaryEmbedding(config.max_seq_len, config.embed_dim)
         self.blocks = nn.ModuleList([
-            BoltBlock(config.embed_dim, config.hidden_dim, config.kernel_size, config.max_seq_len)
+            BoltBlock(config.embed_dim, config.hidden_dim, config.kernel_size, config.max_seq_len, config.ternary_threshold)
             for _ in range(config.num_layers)
         ])
         self.norm = TernaryRMSNorm(config.embed_dim)

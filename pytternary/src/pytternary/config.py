@@ -12,4 +12,5 @@ class AppConfig:
     kernel_size: int = 8
     num_epochs: int = 10
     steps_per_epoch: int = 500
-    learning_rate: float = 0.0005
+    learning_rate: float = 0.003
+    ternary_threshold: float = 0.5

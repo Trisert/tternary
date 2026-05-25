@@ -23,12 +23,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--steps", type=int, default=500)
-    parser.add_argument("--lr", type=float, default=0.0005)
+    parser.add_argument("--lr", type=float, default=0.003)
     parser.add_argument("--generate", type=int, default=0)
     parser.add_argument("--small", action="store_true")
     parser.add_argument("--tiny", action="store_true")
     parser.add_argument("--compile", choices=("default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"), default=None)
     parser.add_argument("--hf-dataset", action="store_true", help="Load TinyStories via HF datasets instead of mmap")
+    parser.add_argument("--ternary-threshold", type=float, default=0.5, help="Ternary quantization threshold ratio (default 0.5, lower = more weights kept active)")
+    parser.add_argument("--grad-clip", type=float, default=0.0, help="Max gradient norm for clipping (0 = no clipping)")
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -53,6 +55,7 @@ def main():
     config.num_epochs = args.epochs
     config.steps_per_epoch = args.steps
     config.learning_rate = args.lr
+    config.ternary_threshold = args.ternary_threshold
 
     tag = " (tiny)" if args.tiny else " (small)" if args.small else ""
     print(f"Config{tag}: embed_dim={config.embed_dim}, hidden={config.hidden_dim}, "
@@ -80,6 +83,12 @@ def main():
     best_loss = float("inf")
     ckpt_dir = Path("checkpoints")
     ckpt_dir.mkdir(exist_ok=True)
+
+    clip_val = args.grad_clip
+    if clip_val:
+        print(f"Gradient clipping: max_norm={clip_val}")
+    if args.ternary_threshold != 0.5:
+        print(f"Ternary threshold: {args.ternary_threshold}")
 
     print(f"\nTraining for {config.num_epochs} epochs, {config.steps_per_epoch} steps/epoch, "
           f"lr={config.learning_rate}\n")
@@ -109,6 +118,8 @@ def main():
             optim.zero_grad()
             loss = compute_loss(inputs, targets)["loss"]
             loss.backward()
+            if clip_val:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), clip_val)
             optim.step()
             epoch_loss += loss.item()
 
