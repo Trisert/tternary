@@ -1,6 +1,8 @@
 use burn::prelude::*;
 use burn::module::Param;
 use burn::nn::{Embedding, EmbeddingConfig};
+use burn::nn::conv::{Conv1d, Conv1dConfig};
+use burn::nn::PaddingConfig1d;
 use burn::tensor::activation::sigmoid;
 use crate::ternary::TernaryLinear;
 use rand::Rng;
@@ -52,43 +54,37 @@ impl<B: Backend> TernaryRMSNorm<B> {
 
 #[derive(Module, Debug)]
 pub struct TernaryDepthwiseConv<B: Backend> {
-    pub weight: Param<Tensor<B, 2>>,
-    pub kernel_size: usize,
-    pub seq_len: usize,
+    pub conv1d: Conv1d<B>,
 }
 
 impl<B: Backend> TernaryDepthwiseConv<B> {
-    pub fn new(embed_dim: usize, kernel_size: usize, seq_len: usize, device: &B::Device) -> Self {
+    pub fn new(embed_dim: usize, kernel_size: usize, _seq_len: usize, device: &B::Device) -> Self {
         let init_scale = (2.0_f32 / kernel_size as f32).sqrt();
         let mut rng = rand::thread_rng();
         let data: Vec<f32> = (0..embed_dim * kernel_size)
             .map(|_| rng.gen_range(-1.0f32..1.0) * init_scale)
             .collect();
-        let weight = Param::from_tensor(
+
+        let mut conv1d = Conv1dConfig::new(embed_dim, embed_dim, kernel_size)
+            .with_groups(embed_dim)
+            .with_padding(PaddingConfig1d::Explicit(kernel_size - 1, 0))
+            .with_bias(false)
+            .init(device);
+
+        conv1d.weight = Param::from_tensor(
             Tensor::from_data(
-                TensorData::new(data, [embed_dim, kernel_size]).convert::<B::FloatElem>(),
+                TensorData::new(data, [embed_dim, 1, kernel_size]).convert::<B::FloatElem>(),
                 device,
             ),
         );
-        Self { weight, kernel_size, seq_len }
+
+        Self { conv1d }
     }
 
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        let [batch, seq, d] = x.dims();
-        let ks = self.kernel_size;
-        debug_assert!(ks <= seq, "kernel_size ({}) must be <= seq_len ({})", ks, seq);
-        let x_padded = Tensor::zeros([batch, seq + ks - 1, d], &x.device());
-        let x_padded = x_padded.slice_assign([0..batch, ks - 1..ks - 1 + seq, 0..d], x);
-
-        let views: Vec<Tensor<B, 4>> = (0..ks)
-            .map(|k| x_padded.clone().slice([0..batch, k..k + seq, 0..d]).unsqueeze_dim(2))
-            .collect();
-        let stacked = Tensor::cat(views, 2);
-        let weight = self.weight.val();
-        let w = weight.transpose()
-            .reshape([1, ks, d])
-            .expand([batch, seq, ks, d]);
-        (stacked * w).sum_dim(2).reshape([batch, seq, d])
+        let x_t = x.transpose();
+        let out = self.conv1d.forward(x_t);
+        out.transpose()
     }
 }
 

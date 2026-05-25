@@ -112,7 +112,7 @@ impl<B: Backend> TernaryTransformer<B> {
         for block in &self.blocks {
             total += block.norm1.weight.val().shape().num_elements();
             total += block.norm2.weight.val().shape().num_elements();
-            total += block.mixer.conv.weight.val().shape().num_elements();
+            total += block.mixer.conv.conv1d.weight.val().shape().num_elements();
             total += block.mixer.gate.weight.val().shape().num_elements();
             total += block.mixer.gate.bias.val().shape().num_elements();
             total += block.ffn.w_gate.weight.val().shape().num_elements();

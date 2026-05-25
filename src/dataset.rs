@@ -21,15 +21,6 @@ impl EncodedDataset {
         Self { mmap, len, max_seq_len }
     }
 
-    #[inline]
-    fn token_at(&self, idx: usize) -> u32 {
-        let byte_off = idx * 2;
-        u16::from_le_bytes([
-            self.mmap[byte_off],
-            self.mmap[byte_off + 1],
-        ]) as u32
-    }
-
     pub fn get_random_batch(&self, batch_size: usize) -> (Vec<i32>, Vec<i32>) {
         let mut rng = rand::thread_rng();
         let max_start = self.len.saturating_sub(self.max_seq_len + 1);
@@ -41,10 +32,13 @@ impl EncodedDataset {
 
         for _ in 0..batch_size {
             let start = rng.gen_range(0..max_start);
-            for j in 0..seq {
-                input_buf.push(self.token_at(start + j) as i32);
-                target_buf.push(self.token_at(start + j + 1) as i32);
-            }
+            let byte_start = start * 2;
+            let chunk = &self.mmap[byte_start..byte_start + (seq + 1) * 2];
+            let tokens: Vec<i32> = chunk.chunks_exact(2)
+                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]) as i32)
+                .collect();
+            input_buf.extend_from_slice(&tokens[..seq]);
+            target_buf.extend_from_slice(&tokens[1..]);
         }
 
         (input_buf, target_buf)

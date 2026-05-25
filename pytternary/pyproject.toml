@@ -1,0 +1,19 @@
+[project]
+name = "pytternary"
+version = "0.1.0"
+description = "Ternary neural network (PyTorch port of tternary)"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.0",
+    "numpy",
+    "tokenizers>=0.19",
+    "tqdm",
+    "datasets>=3.0",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -268,12 +268,35 @@ fn main() {
     let vocab_size = tokenizer.get_vocab_size(true);
     println!("Vocabulary size: {}", vocab_size);
 
-    let config = AppConfig::new(vocab_size)
-        .with_num_epochs(num_epochs)
-        .with_steps_per_epoch(steps_per_epoch)
-        .with_learning_rate(lr);
+    let small = args.iter().any(|a| a == "--small");
+    let tiny = args.iter().any(|a| a == "--tiny");
 
-    println!("Config: embed_dim={}, hidden={}, layers={}, max_seq={}, kernel={}",
+    let config = if tiny {
+        AppConfig::new(vocab_size)
+            .with_embed_dim(24)
+            .with_hidden_dim(128)
+            .with_num_layers(5)
+            .with_kernel_size(5)
+            .with_num_epochs(num_epochs)
+            .with_steps_per_epoch(steps_per_epoch)
+            .with_learning_rate(lr)
+    } else if small {
+        AppConfig::new(vocab_size)
+            .with_embed_dim(192)
+            .with_hidden_dim(384)
+            .with_num_layers(4)
+            .with_num_epochs(num_epochs)
+            .with_steps_per_epoch(steps_per_epoch)
+            .with_learning_rate(lr)
+    } else {
+        AppConfig::new(vocab_size)
+            .with_num_epochs(num_epochs)
+            .with_steps_per_epoch(steps_per_epoch)
+            .with_learning_rate(lr)
+    };
+
+    let tag = if tiny { " (tiny)" } else if small { " (small)" } else { "" };
+    println!("Config{tag}: embed_dim={}, hidden={}, layers={}, max_seq={}, kernel={}",
              config.embed_dim, config.hidden_dim,
              config.num_layers, config.max_seq_len, config.kernel_size);
 
@@ -316,7 +339,7 @@ fn main() {
     let ckpt_dir = "checkpoints";
     std::fs::create_dir_all(ckpt_dir).ok();
 
-    let (batch_tx, batch_rx) = sync_channel(2);
+    let (batch_tx, batch_rx) = sync_channel(16);
     {
         let ds = dataset.clone();
         let bs = config.batch_size;
@@ -352,7 +375,7 @@ fn main() {
             };
 
             let output = model.step(batch);
-            let loss_val: f32 = output.item.loss.to_data().to_vec::<f32>().unwrap()[0];
+            let loss_val: f32 = output.item.loss.into_scalar();
             epoch_loss += loss_val;
 
             model = model.optimize(&mut optim, current_lr, output.grads);
