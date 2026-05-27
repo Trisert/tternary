@@ -1,4 +1,5 @@
 import random
+import threading
 import numpy as np
 import torch
 
@@ -13,16 +14,34 @@ class EncodedDataset:
         max_start = max(0, self.len - self.max_seq_len - 1)
         seq = self.max_seq_len
 
-        input_buf = []
-        target_buf = []
+        starts = [random.randrange(0, max_start) for _ in range(batch_size)]
 
-        for _ in range(batch_size):
-            start = random.randrange(0, max_start)
+        inputs = torch.empty(batch_size, seq, dtype=torch.long)
+        targets = torch.empty(batch_size, seq, dtype=torch.long)
+
+        for i, start in enumerate(starts):
             chunk = torch.from_numpy(self.data[start:start + seq + 1].copy()).long()
-            input_buf.append(chunk[:seq])
-            target_buf.append(chunk[1:])
+            inputs[i] = chunk[:seq]
+            targets[i] = chunk[1:]
 
-        return torch.stack(input_buf), torch.stack(target_buf)
+        return inputs, targets
+
+
+class BackgroundPrefetcher:
+    def __init__(self, dataset, batch_size: int, num_prefetch: int = 2):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.len = dataset.len
+        self.queue = __import__("queue").Queue(maxsize=num_prefetch)
+        self.worker = threading.Thread(target=self._run, daemon=True)
+        self.worker.start()
+
+    def _run(self):
+        while True:
+            self.queue.put(self.dataset.get_random_batch(self.batch_size))
+
+    def get_random_batch(self, _batch_size):
+        return self.queue.get()
 
 
 class HFCausalLMDataset:
@@ -56,13 +75,14 @@ class HFCausalLMDataset:
         max_start = max(0, self.len - self.max_seq_len - 1)
         seq = self.max_seq_len
 
-        input_buf = []
-        target_buf = []
+        starts = [random.randrange(0, max_start) for _ in range(batch_size)]
 
-        for _ in range(batch_size):
-            start = random.randrange(0, max_start)
+        inputs = torch.empty(batch_size, seq, dtype=torch.long)
+        targets = torch.empty(batch_size, seq, dtype=torch.long)
+
+        for i, start in enumerate(starts):
             chunk = torch.from_numpy(self.tokens[start:start + seq + 1].copy()).long()
-            input_buf.append(chunk[:seq])
-            target_buf.append(chunk[1:])
+            inputs[i] = chunk[:seq]
+            targets[i] = chunk[1:]
 
-        return torch.stack(input_buf), torch.stack(target_buf)
+        return inputs, targets

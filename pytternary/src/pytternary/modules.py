@@ -22,8 +22,8 @@ class TernaryRMSNorm(nn.Module):
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        rms = (x.pow(2).mean(-1, keepdim=True) + self.eps).sqrt()
-        return x * rms.reciprocal() * self.weight
+        rms = torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+        return x * rms * self.weight
 
 
 class TernaryDepthwiseConv(nn.Module):
@@ -77,8 +77,24 @@ class BoltBlock(nn.Module):
         self.mixer = GatedConvMixer(embed_dim, kernel_size, seq_len, ternary_threshold)
         self.norm2 = TernaryRMSNorm(embed_dim)
         self.ffn = TernaryGLUFFN(embed_dim, hidden_dim, ternary_threshold)
+        self.kernel_size = kernel_size
+        self._conv_cache = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.mixer(self.norm1(x))
         x = x + self.ffn(self.norm2(x))
         return x
+
+    def forward_step(self, x: torch.Tensor) -> torch.Tensor:
+        normed = self.norm1(x)
+        conv_input = torch.cat([self._conv_cache, normed], dim=1) if self._conv_cache is not None else normed
+        conv_out = self.mixer.conv(conv_input)[:, -1:, :]
+        mixer_out = conv_out * torch.sigmoid(self.mixer.gate(normed))
+        cache_len = self.kernel_size - 1
+        self._conv_cache = conv_input[:, -cache_len:, :] if cache_len > 0 else None
+        x = x + mixer_out
+        x = x + self.ffn(self.norm2(x))
+        return x
+
+    def reset_cache(self):
+        self._conv_cache = None

@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from .config import AppConfig
 from .model import TernaryTransformer
-from .dataset import EncodedDataset, HFCausalLMDataset
+from .dataset import EncodedDataset, HFCausalLMDataset, BackgroundPrefetcher
 
 
 _ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -44,6 +44,12 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"=== Ternary Transformer (PyTorch / {device.upper()}) ===\n")
 
+    if device == "cuda":
+        torch.set_float32_matmul_precision("high")
+    else:
+        threads = torch.get_num_threads()
+        print(f"CPU threads: {threads}  (set OMP_NUM_THREADS or --nproc to tune)")
+
     from pytternary_tokenizer import Tokenizer
     tokenizer_file = TOKENIZER_FILES[args.dataset]
     tokenizer = Tokenizer.load(tokenizer_file)
@@ -52,13 +58,13 @@ def main():
 
     config = AppConfig(vocab_size)
     if args.tiny:
-        config.embed_dim = 24
-        config.hidden_dim = 128
-        config.num_layers = 5
-        config.kernel_size = 5
+        config.embed_dim = 32
+        config.hidden_dim = 64
+        config.num_layers = 2
+        config.kernel_size = 3
     elif args.small:
-        config.embed_dim = 192
-        config.hidden_dim = 384
+        config.embed_dim = 128
+        config.hidden_dim = 256
         config.num_layers = 4
     config.num_epochs = args.epochs
     config.steps_per_epoch = args.steps
@@ -72,8 +78,9 @@ def main():
     model = TernaryTransformer(config).to(device)
     compute_loss = model.forward_training
     if args.compile:
-        print(f"Compiling with mode={args.compile} ...")
-        compute_loss = torch.compile(compute_loss, mode=args.compile, fullgraph=True)
+        use_fullgraph = device == "cuda"
+        print(f"Compiling with mode={args.compile} fullgraph={use_fullgraph} ...")
+        compute_loss = torch.compile(compute_loss, mode=args.compile, fullgraph=use_fullgraph)
     print(f"Parameters: {model.num_parameters():,}")
 
     if args.hf_dataset:
@@ -82,10 +89,13 @@ def main():
     else:
         encoded_file = ENCODED_FILES[args.dataset]
         dataset = EncodedDataset(encoded_file, config.max_seq_len)
+    if device == "cpu":
+        dataset = BackgroundPrefetcher(dataset, config.batch_size)
+        print(f"Background data prefetcher: enabled ({config.batch_size} per batch)")
     num_tokens = dataset.len
     print(f"Dataset: {num_tokens:,} tokens ({num_tokens * 2 / 1e6:.1f} MB on disk)")
 
-    optim = AdamW(model.parameters(), lr=config.learning_rate, betas=(0.9, 0.999))
+    optim = AdamW(model.parameters(), lr=config.learning_rate, betas=(0.9, 0.999), fused=(device == "cuda"))
     warmup_epochs = 1
     min_lr = config.learning_rate * 0.1
 
@@ -98,6 +108,11 @@ def main():
         print(f"Gradient clipping: max_norm={clip_val}")
     if args.ternary_threshold != 0.5:
         print(f"Ternary threshold: {args.ternary_threshold}")
+
+    use_amp = device == "cuda"
+    scaler = torch.amp.GradScaler() if use_amp else None
+    if use_amp:
+        print("Mixed precision: enabled (AMP)")
 
     print(f"\nTraining for {config.num_epochs} epochs, {config.steps_per_epoch} steps/epoch, "
           f"lr={config.learning_rate}\n")
@@ -125,11 +140,21 @@ def main():
             inputs, targets = inputs.to(device), targets.to(device)
 
             optim.zero_grad()
-            loss = compute_loss(inputs, targets)["loss"]
-            loss.backward()
+            with torch.amp.autocast(device_type=device, enabled=use_amp):
+                loss = compute_loss(inputs, targets)["loss"]
+            if scaler is not None:
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
             if clip_val:
+                if scaler is not None:
+                    scaler.unscale_(optim)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), clip_val)
-            optim.step()
+            if scaler is not None:
+                scaler.step(optim)
+                scaler.update()
+            else:
+                optim.step()
             epoch_loss += loss.item()
 
         avg_loss = epoch_loss / config.steps_per_epoch

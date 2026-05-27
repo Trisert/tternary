@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 @dataclass
 class AppConfig:
     vocab_size: int
-    embed_dim: int = 256
-    hidden_dim: int = 512
-    num_layers: int = 6
+    embed_dim: int = 96
+    hidden_dim: int = 256
+    num_layers: int = 3
     max_seq_len: int = 512
     batch_size: int = 16
     kernel_size: int = 8
