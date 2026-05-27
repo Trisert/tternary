@@ -15,8 +15,15 @@ from .dataset import EncodedDataset, HFCausalLMDataset
 
 
 _ROOT = Path(__file__).resolve().parent.parent.parent.parent
-ENCODED_FILE = str(_ROOT / "data" / "tinystories_encoded_u16.bin")
-TOKENIZER_FILE = str(_ROOT / "data" / "tokenizer.json")
+ENCODED_FILES = {
+    "tinystories": str(_ROOT / "data" / "tinystories_encoded_u16.bin"),
+    "code": str(_ROOT / "data" / "code_encoded_u16.bin"),
+}
+TOKENIZER_FILES = {
+    "tinystories": str(_ROOT / "data" / "tokenizer.json"),
+    "code": str(_ROOT / "data" / "tokenizer_code.json"),
+}
+HF_CACHE_FILE = str(_ROOT / "data" / "tinystories_hf_encoded.npy")
 
 
 def main():
@@ -28,6 +35,7 @@ def main():
     parser.add_argument("--small", action="store_true")
     parser.add_argument("--tiny", action="store_true")
     parser.add_argument("--compile", choices=("default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"), default=None)
+    parser.add_argument("--dataset", choices=("tinystories", "code"), default="tinystories", help="Which pre-tokenized dataset to load")
     parser.add_argument("--hf-dataset", action="store_true", help="Load TinyStories via HF datasets instead of mmap")
     parser.add_argument("--ternary-threshold", type=float, default=0.5, help="Ternary quantization threshold ratio (default 0.5, lower = more weights kept active)")
     parser.add_argument("--grad-clip", type=float, default=0.0, help="Max gradient norm for clipping (0 = no clipping)")
@@ -36,9 +44,9 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"=== Ternary Transformer (PyTorch / {device.upper()}) ===\n")
 
-    from tokenizers import Tokenizer, decoders
-    tokenizer = Tokenizer.from_file(TOKENIZER_FILE)
-    tokenizer.decoder = decoders.ByteLevel()
+    from pytternary_tokenizer import Tokenizer
+    tokenizer_file = TOKENIZER_FILES[args.dataset]
+    tokenizer = Tokenizer.load(tokenizer_file)
     vocab_size = tokenizer.get_vocab_size()
     print(f"Vocabulary size: {vocab_size}")
 
@@ -70,9 +78,10 @@ def main():
 
     if args.hf_dataset:
         print("Loading TinyStories via HF datasets (tokenizing on-the-fly)...")
-        dataset = HFCausalLMDataset(tokenizer, config.max_seq_len)
+        dataset = HFCausalLMDataset(tokenizer, config.max_seq_len, cache_file=HF_CACHE_FILE)
     else:
-        dataset = EncodedDataset(ENCODED_FILE, config.max_seq_len)
+        encoded_file = ENCODED_FILES[args.dataset]
+        dataset = EncodedDataset(encoded_file, config.max_seq_len)
     num_tokens = dataset.len
     print(f"Dataset: {num_tokens:,} tokens ({num_tokens * 2 / 1e6:.1f} MB on disk)")
 

@@ -1,35 +1,69 @@
 # tternary
 
-Ternary neural network with **two implementations** sharing the same dataset.
+Ternary neural network in **PyTorch**. Tokenizer implemented in Rust via PyO3.
 
-## Rust (burn-rs)
+## Setup
 
 ```bash
-cargo build                                    # CPU (NdArray + OpenBLAS)
-cargo run -- --steps 500 --epochs 10           # train
-cargo run -- --tiny --steps 100 --epochs 3     # tiny config for quick testing
-cargo run -- --generate 200                    # inference from checkpoints/best.safetensors
-cargo run -r --features cuda -- --steps 500    # CUDA (requires Nix dev shell: nix develop .#cuda)
+cd pytternary
+uv sync                                   # install Python deps in .venv
+uv pip install maturin                     # install maturin for Rust tokenizer build
+
+# Build & install the Rust tokenizer
+uv run maturin develop --manifest-path tokenizer_rs/Cargo.toml
 ```
 
-CLI: `--epochs`, `--steps`, `--lr`, `--generate`, `--small`, `--tiny`
-
-Checkpoints: `checkpoints/*.safetensors` (burn-store format).
-
-## Python/PyTorch
+## Training
 
 ```bash
-uv sync                              # install deps in .venv
 uv run python -m pytternary.train --tiny --steps 100
 uv run python -m pytternary.train --tiny --steps 100 --compile max-autotune
 uv run python -m pytternary.train --hf-dataset   # load TinyStories via HF datasets
+uv run python -m pytternary.prepare_code                  # download + tokenize code dataset
+uv run python -m pytternary.train --dataset code --steps 500 --tiny  # train on code
 ```
 
 CLI: `--epochs`, `--steps`, `--lr`, `--generate`, `--small`, `--tiny`,
 `--compile {default,reduce-overhead,max-autotune,max-autotune-no-cudagraphs}`,
-`--hf-dataset`, `--ternary-threshold`, `--grad-clip`.
+`--hf-dataset`, `--dataset {tinystories,code}`, `--ternary-threshold`, `--grad-clip`.
 
 Checkpoints: `pytternary/checkpoints/*.pt`.
+
+## Tokenizer (Rust / PyO3)
+
+The tokenizer lives in `pytternary/tokenizer_rs/` and is built with [maturin](https://www.maturin.rs/).
+
+```bash
+cd pytternary/tokenizer_rs
+maturin develop      # build + install in .venv
+```
+
+Python API:
+
+```python
+from pytternary_tokenizer import Tokenizer, train_tokenizer, tokenize_dataset_file
+
+tok = Tokenizer.load("data/tokenizer.json")
+ids = tok.encode("Hello world")               # list[int]
+
+train_tokenizer("input.txt", "tok.json", 4096)       # train BPE + ByteLevel
+tokenize_dataset_file("in.txt", "tok.json", "out.bin")  # parallel encode to u16
+```
+
+**Tip**: use `prepare_code` to download and tokenize the code dataset, then train:
+
+```bash
+uv run python -m pytternary.prepare_code
+uv run python -m pytternary.train --dataset code --steps 500
+```
+
+## Data
+
+In `data/`:
+- `tokenizer.json` — BPE tokenizer (vocab_size=4096), trained on TinyStories
+- `tokenizer_code.json` — BPE tokenizer (vocab_size=4096), trained on code snippets
+- `tinystories_encoded_u16.bin` — pre-encoded token IDs as u16 LE (471M tokens, 940MB)
+- `code_encoded_u16.bin` — pre-encoded code token IDs as u16 LE
 
 ## Architecture
 
@@ -42,24 +76,3 @@ Each **BoltBlock**: residual `x + GatedConvMixer(norm(x))` + residual `x + GLUFF
 **GatedConvMixer**: depthwise conv1d (left-only padding) gated by sigmoid(linear(x)).
 
 **GLUFFN**: SiLU-gated FFN with ternary linear layers.
-
-## Data
-
-Shared between both implementations in `data/`:
-- `tokenizer.json` — BPE tokenizer (vocab_size=4096), trained on TinyStories
-- `tinystories_encoded_u16.bin` — pre-encoded token IDs as u16 LE (471M tokens, 940MB)
-
-The Rust `main.rs` auto-downloads TinyStories and trains the tokenizer if missing. Python assumes pre-existing files.
-
-**Python tokenizer gotcha**: the ByteLevel decoder is not serialized. Must set `tokenizer.decoder = decoders.ByteLevel()` after loading for clean space decoding.
-
-## Nix
-
-Dev shells via `flake.nix`:
-- `nix develop` — CPU (OpenBLAS)
-- `nix develop .#cuda` — CUDA (RTX 2060 / Tesla P100)
-
-## .gitignore
-
-Ignores: `/target`, `*.bin`, `data/tinystories_encoded.bin`, `pytternary/checkpoints/`,
-`pytternary/src/pytternary.egg-info/`, `__pycache__/`, `*.pyc`.

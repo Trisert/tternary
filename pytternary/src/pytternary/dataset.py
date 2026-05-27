@@ -26,19 +26,30 @@ class EncodedDataset:
 
 
 class HFCausalLMDataset:
-    def __init__(self, tokenizer, max_seq_len: int, split: str = "train"):
-        from datasets import load_dataset
-        from tokenizers import Encoding
+    def __init__(self, tokenizer, max_seq_len: int, split: str = "train", cache_file: str | None = None):
+        import os
+        from tqdm import tqdm
 
-        dataset = load_dataset("roneneldan/TinyStories", split=split)
         self.max_seq_len = max_seq_len
 
-        tokens = []
-        for example in dataset:
-            enc: Encoding = tokenizer.encode(example["text"])
-            tokens.extend(enc.ids)
+        if cache_file is not None and os.path.exists(cache_file):
+            print(f"Loading cached tokenized dataset from {cache_file}")
+            self.tokens = np.load(cache_file)
+        else:
+            from datasets import load_dataset
+            dataset = load_dataset("roneneldan/TinyStories", split=split)
+            texts = [example["text"] for example in dataset]
 
-        self.tokens = np.array(tokens, dtype=np.int32)
+            tokens = []
+            for text in tqdm(texts, desc="Tokenizing"):
+                tokens.extend(tokenizer.encode(text))
+
+            self.tokens = np.array(tokens, dtype=np.int32)
+
+            if cache_file is not None:
+                np.save(cache_file, self.tokens)
+                print(f"Saved cached tokenized dataset to {cache_file}")
+
         self.len = len(self.tokens)
 
     def get_random_batch(self, batch_size: int) -> tuple[torch.Tensor, torch.Tensor]:

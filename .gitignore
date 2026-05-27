@@ -1,7 +1,8 @@
-/target
 *.bin
 data/tinystories_encoded.bin
+data/code_dataset.txt
 pytternary/checkpoints/
 pytternary/src/pytternary.egg-info/
+pytternary/tokenizer_rs/target/
 __pycache__/
 *.pyc

@@ -1,0 +1,15 @@
+[package]
+name = "pytternary-tokenizer"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pytternary_tokenizer"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["extension-module"] }
+tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
+serde_json = "1"
+rayon = "1.10"
+memmap2 = "0.9"

@@ -1,15 +1,21 @@
 # tternary
 
-A ternary neural network implementation in Rust.
+Ternary neural network in **PyTorch**. Tokenizer implemented in Rust via PyO3.
 
 ## Setup
 
 ```bash
-cargo build
+cd pytternary
+uv sync                                   # install Python deps in .venv
+
+# Build & install the Rust tokenizer
+cd tokenizer_rs && maturin develop --uv && cd ..
 ```
 
-## Run
+## Training
 
 ```bash
-cargo run
+uv run python -m pytternary.train --tiny --steps 100
 ```
+
+See `AGENTS.md` for full CLI options.
